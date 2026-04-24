@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+.env
+
+# Données (trop lourdes pour git)
+data/raw/
+data/processed/
+data/labeled/
+
+# Modèles entraînés (binaires lourds)
+*.pt
+*.pkl
+*.h5
+*.pth
+
+# Résultats
+results/*.png
+results/*.mp4
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kaggle credentials
+kaggle.json
+.kaggle/
+
+# Logs
+*.log
+logs/
+
+# Streamlit
+.streamlit/secrets.toml

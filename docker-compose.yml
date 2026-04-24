@@ -1,0 +1,130 @@
+version: "3.9"
+
+# CoachPosture AI — Stack complète
+# Lance : docker compose up -d
+#
+# Services :
+#   dashboard  — Streamlit interface (port 8501)
+#   ollama     — LLM local (port 11434) — utilise l'instance existante si déjà active
+#
+# Pré-requis GPU :
+#   nvidia-container-toolkit installé + Docker runtime nvidia configuré
+
+services:
+
+  # ── Dashboard Streamlit ───────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coachposture-ai:latest
+    container_name: coachposture_dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./src:/app/src
+      # Accès webcam (device mapping depuis l'hôte)
+      - /dev/video0:/dev/video0
+    devices:
+      - /dev/video0:/dev/video0
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - DISPLAY=${DISPLAY:-:0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - coachposture_net
+    depends_on:
+      - ollama
+    command: streamlit run src/dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Ollama LLM (qwen2.5:7b) ──────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: coachposture_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - coachposture_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Entraînement (service one-shot) ──────────────────────────────────────
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coachposture-ai:latest
+    container_name: coachposture_trainer
+    profiles:
+      - training   # Lancé uniquement avec : docker compose --profile training up trainer
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./src:/app/src
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - coachposture_net
+    command: >
+      bash -c "
+        python src/data/download_datasets.py --dataset all &&
+        python src/data/extract_keypoints.py --dataset all &&
+        python src/data/label_postures.py &&
+        python src/models/train.py --model all --epochs 80
+      "
+
+# ── Volumes ────────────────────────────────────────────────────────────────
+volumes:
+  ollama_models:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # Réutilise les modèles Ollama déjà téléchargés sur l'hôte
+      device: /root/.ollama
+
+# ── Réseau ─────────────────────────────────────────────────────────────────
+networks:
+  coachposture_net:
+    driver: bridge
